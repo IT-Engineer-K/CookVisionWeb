@@ -1,0 +1,104 @@
+# CookVision（Web試作版）
+
+調理の工程を写真で撮るだけで、AIがレシピの下書きを作るWebアプリです。
+要件定義書のMVP（機能 F-01〜F-08）を実装しています。
+
+## 実装済みの機能
+
+| ID | 機能 | 画面 |
+| --- | --- | --- |
+| F-01 | メール／Googleでの登録・ログイン | `/login` |
+| F-02 | 調理セッションの開始・終了 | `/`（開始）、`/cook`（終了） |
+| F-03 | 工程ごとの写真撮影（アルバムからの追加も可） | `/cook` |
+| F-04 | 写真へのメモ | `/cook` |
+| F-05 | AI解析（写真→レシピ下書き） | `/api/analyze` |
+| F-06 | AIの自信が低い項目に「要確認」「推定」を表示 | `/recipe` |
+| F-07 | レシピの編集（材料・手順の追加、削除、並べ替え） | `/recipe` |
+| F-08 | レシピの保存・一覧・検索（料理名・食材） | `/`、`/recipe` |
+| — | 顔の自動モザイク（端末内で処理してから送信） | `/cook` |
+| — | 学習利用の同意（オプトイン）、ログアウト | `/settings` |
+
+## セットアップ
+
+### 1. 依存関係を入れる
+
+```bash
+npm install
+```
+
+### 2. Supabase を用意する
+
+1. https://supabase.com でプロジェクトを作る（無料プランで可）
+2. 左メニューの **SQL Editor** を開き、`supabase/schema.sql` の中身を貼り付けて **Run**
+3. **Project Settings → API** から、Project URL と anon（publishable）key を控える
+4. **Authentication → URL Configuration** の Site URL に `http://localhost:3000` を入れる（公開後は Vercel のURLも追加）
+5. Googleログインを使う場合は **Authentication → Providers → Google** を有効にする（Google Cloud で OAuth クライアントの作成が必要）
+
+メールでの登録は、初期設定では確認メールのリンクを開くまでログインできません。
+試作中に省きたい場合は **Authentication → Providers → Email** の「Confirm email」をオフにします。
+
+### 3. Gemini の APIキーを用意する
+
+https://aistudio.google.com で APIキーを発行します（無料枠あり）。
+
+### 4. 環境変数を設定する
+
+`.env.example` をコピーして `.env.local` を作り、値を入れます。
+
+```bash
+cp .env.example .env.local
+```
+
+### 5. 起動する
+
+```bash
+npm run dev
+```
+
+http://localhost:3000 を開きます。
+
+### スマホで試す
+
+カメラはスマホのブラウザで使う想定です。PCと同じWi-Fiにつないだスマホから `http://<PCのIPアドレス>:3000` を開くか、Vercel に公開して試してください。
+（`localhost` 以外の http では一部ブラウザのカメラ機能が制限されることがあります。その場合は Vercel の https URL を使ってください。）
+
+## Vercel への公開
+
+1. GitHub にリポジトリを作って push する
+2. Vercel で **Add New → Project** からリポジトリを選ぶ
+3. **Environment Variables** に `.env.local` と同じ5項目（`NEXT_PUBLIC_SUPABASE_URL`、`NEXT_PUBLIC_SUPABASE_ANON_KEY`、`AI_PROVIDER`、`GEMINI_API_KEY`、`GEMINI_MODEL`）を入れて Deploy
+4. 発行されたURLを Supabase の Site URL / Redirect URLs に追加する
+
+Vercel の無料プラン（Hobby）は商用利用ができません。課金を始める前にプランを見直してください。
+
+## 構成
+
+```
+src/
+  app/
+    page.tsx, HomeClient.tsx      ホーム（レシピ一覧・検索・調理開始）
+    login/                        ログイン・登録
+    cook/                         撮影画面（写真・メモ・調理終了）
+    recipe/                       レシピの確認・編集
+    settings/                     学習利用の同意・ログアウト
+    api/analyze/route.ts          AI解析API（サーバー側。APIキーはここだけで使う）
+  lib/
+    ai/index.ts                   AI呼び出しの入口（運用AIの切り替えはここで行う）
+    ai/gemini.ts                  Gemini の呼び出し
+    ai/recipe-schema.ts           AIに返させるレシピ形式とプロンプト
+    image.ts                      写真の縮小と顔モザイク（MediaPipe）
+    supabase.ts                   Supabase クライアント
+supabase/schema.sql               テーブル・行単位アクセス制御・写真の保存先
+```
+
+## データの流れ
+
+1. スマホで撮った写真を、端末内で長辺1280pxに縮小し、顔をモザイクにする
+2. Supabase Storage の非公開フォルダ（本人のみ閲覧可）に保存する
+3. 「調理終了」で `/api/analyze` を呼ぶ。サーバーが写真を読み、Gemini に送ってレシピのJSONを受け取る
+4. レシピ・材料・手順をDBに保存する。AIの出力（`ai_*` 列）とユーザーが直した値の両方を残す
+
+## 運用AIを OpenAI などに切り替えるとき
+
+`src/lib/ai/` に `openai.ts` を足し、`index.ts` の `switch` に分岐を追加します。
+返す形式は `recipe-schema.ts` の `AiRecipe` に揃えれば、画面とDBは変更不要です。
