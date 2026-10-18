@@ -29,7 +29,13 @@ npm install
 ### 2. Supabase を用意する
 
 1. https://supabase.com でプロジェクトを作る（無料プランで可）
-2. 左メニューの **SQL Editor** を開き、`supabase/schema.sql` の中身を貼り付けて **Run**
+2. テーブルを作る（データベースの変更は `supabase/migrations/` で管理する）
+   ```bash
+   npx supabase login
+   npx supabase link --project-ref <Project ID>
+   npx supabase db push
+   ```
+   以後、テーブルを変えるときは `npx supabase migration new <名前>` でファイルを作り、`db push` で反映する。SQL Editor で直接変えない。
 3. **Project Settings → API** から、Project URL と anon（publishable）key を控える
 4. **Authentication → URL Configuration** の Site URL に `http://localhost:3000` を入れる（公開後は Vercel のURLも追加）
 5. Googleログインを使う場合は **Authentication → Providers → Google** を有効にする（Google Cloud で OAuth クライアントの作成が必要）
@@ -88,7 +94,8 @@ src/
     ai/recipe-schema.ts           AIに返させるレシピ形式とプロンプト
     image.ts                      写真の縮小と顔モザイク（MediaPipe）
     supabase.ts                   Supabase クライアント
-supabase/schema.sql               テーブル・行単位アクセス制御・写真の保存先
+supabase/migrations/              テーブル・行単位アクセス制御・写真の保存先（変更履歴）
+supabase/config.toml              Supabase CLI の設定
 ```
 
 ## データの流れ
