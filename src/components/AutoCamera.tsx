@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { frameDiff, signatureOf } from "@/lib/frame";
+import { contrastOf, frameDiff, signatureOf } from "@/lib/frame";
 
 /** 映像を調べる間隔 */
 const SAMPLE_MS = 1000;
@@ -13,6 +13,8 @@ const CHANGE_THRESHOLD = 12;
 const STABLE_THRESHOLD = 4;
 /** 落ち着いた状態が何回続いたら撮るか */
 const STABLE_SAMPLES = 2;
+/** 明暗のばらつきがこれ未満の画面（スマホが倒れて真っ黒など）は撮らない */
+const MIN_CONTRAST = 8;
 
 function grab(video: HTMLVideoElement): Promise<File> {
   const canvas = document.createElement("canvas");
@@ -68,6 +70,12 @@ export function AutoCamera({
       const v = videoRef.current;
       if (!v || v.readyState < 2 || busy || !v.videoWidth) return;
       const sig = signatureOf(v, v.videoWidth, v.videoHeight);
+      if (contrastOf(sig) < MIN_CONTRAST) {
+        prev = null;
+        stable = 0;
+        setStatus("映像が暗いか、ほぼ一色です。スマホが倒れていないか確認してください");
+        return;
+      }
       stable = prev && frameDiff(prev, sig) < STABLE_THRESHOLD ? stable + 1 : 0;
       prev = sig;
       const changed = !lastSaved || frameDiff(lastSaved, sig) > CHANGE_THRESHOLD;

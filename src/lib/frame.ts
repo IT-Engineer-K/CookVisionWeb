@@ -33,3 +33,10 @@ export function frameDiff(a: number[], b: number[]): number {
   for (let i = 0; i < a.length; i++) sum += Math.abs(a[i] - ma - (b[i] - mb));
   return sum / a.length;
 }
+
+/** 特徴の明暗のばらつき（標準偏差）。真っ黒や真っ白など、ほぼ一色の画面で小さくなる */
+export function contrastOf(sig: number[]): number {
+  if (sig.length === 0) return 0;
+  const m = sig.reduce((s, x) => s + x, 0) / sig.length;
+  return Math.sqrt(sig.reduce((s, x) => s + (x - m) ** 2, 0) / sig.length);
+}
