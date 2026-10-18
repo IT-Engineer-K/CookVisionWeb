@@ -1,6 +1,7 @@
 "use client";
 
 import type { FaceDetector } from "@mediapipe/tasks-vision";
+import { signatureOf } from "./frame";
 
 /** 送信前に縮小する長辺のピクセル数（AI の費用と通信量を抑える） */
 const MAX_SIDE = 1280;
@@ -107,6 +108,8 @@ export type PreparedPhoto = {
   /** 顔の検出を実行できたか（顔が無かった場合も true） */
   faceBlurred: boolean;
   facesFound: number;
+  /** 似た写真を間引くための特徴（16×16の明るさ） */
+  signature: number[];
 };
 
 /**
@@ -147,5 +150,6 @@ export async function preparePhoto(file: File, opts: { blur?: boolean } = {}): P
   const blob = await new Promise<Blob>((resolve, reject) =>
     canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("画像を変換できませんでした"))), "image/jpeg", 0.82),
   );
-  return { blob, faceBlurred, facesFound };
+  const signature = signatureOf(canvas, canvas.width, canvas.height);
+  return { blob, faceBlurred, facesFound, signature };
 }

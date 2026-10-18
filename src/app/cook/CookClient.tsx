@@ -4,12 +4,20 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { AppShell } from "@/components/AppShell";
+import { AutoCamera } from "@/components/AutoCamera";
 import { useAuth } from "@/components/AuthProvider";
 import { getFaceBlurSetting, preloadFaceDetector, preparePhoto } from "@/lib/image";
 import { CAPTURE_BUCKET, getSupabase } from "@/lib/supabase";
-import type { Capture, CookingSession } from "@/lib/types";
+import { MAX_PHOTOS } from "@/lib/limits";
+import { pickToPrune } from "@/lib/prune";
+import type { Capture, CaptureSource, CookingSession } from "@/lib/types";
 
 type CaptureView = Capture & { url: string | null };
+
+const nowIso = () => new Date().toISOString();
+
+const byTime = (xs: CaptureView[]) =>
+  [...xs].sort((a, b) => new Date(a.taken_at).getTime() - new Date(b.taken_at).getTime());
 
 function elapsedLabel(fromIso: string, toIso: string) {
   const min = Math.max(0, Math.round((new Date(toIso).getTime() - new Date(fromIso).getTime()) / 60000));
@@ -36,6 +44,13 @@ export function CookClient() {
   const originals = useRef(new Map<string, File>());
   const [faces, setFaces] = useState<Record<string, number>>({});
   const [unblurring, setUnblurring] = useState<string | null>(null);
+  const [autoOpen, setAutoOpen] = useState(false);
+  const [pruned, setPruned] = useState(0);
+  // 自動撮影の間引きで最新の一覧を参照するため
+  const capturesRef = useRef<CaptureView[]>([]);
+  useEffect(() => {
+    capturesRef.current = captures;
+  }, [captures]);
 
   useEffect(() => {
     preloadFaceDetector();
@@ -77,45 +92,78 @@ export function CookClient() {
     await getSupabase().from("cooking_sessions").update({ title: title.trim() || null }).eq("id", sessionId);
   }
 
+  /** 1枚を整えて保存し、一覧に加える。保存した行を返す */
+  async function uploadOne(file: File, source: CaptureSource, takenAt: string): Promise<CaptureView> {
+    if (!user || !sessionId) throw new Error("ログインが必要です");
+    const supabase = getSupabase();
+    const blurOn = getFaceBlurSetting();
+    const prepared = await preparePhoto(file, { blur: blurOn });
+    if (blurOn && !prepared.faceBlurred) setFaceWarning(true);
+    const path = `${user.id}/${sessionId}/${crypto.randomUUID()}.jpg`;
+    const up = await supabase.storage
+      .from(CAPTURE_BUCKET)
+      .upload(path, prepared.blob, { contentType: "image/jpeg" });
+    if (up.error) throw new Error(up.error.message);
+    const { data, error } = await supabase
+      .from("captures")
+      .insert({
+        session_id: sessionId,
+        storage_path: path,
+        taken_at: takenAt,
+        face_blurred: prepared.faceBlurred,
+        source,
+        signature: prepared.signature,
+      })
+      .select("*")
+      .single();
+    if (error || !data) throw new Error(error?.message ?? "写真を保存できませんでした");
+    if (prepared.facesFound > 0) {
+      originals.current.set(data.id, file);
+      setFaces((f) => ({ ...f, [data.id]: prepared.facesFound }));
+    }
+    const view: CaptureView = { ...(data as Capture), url: URL.createObjectURL(prepared.blob) };
+    setCaptures((prev) => byTime([...prev, view]));
+    return view;
+  }
+
+  /** 上限を超えたら、自動撮影の写真のうち前後と似ているものから削る */
+  async function pruneIfNeeded(added: CaptureView) {
+    const all = byTime([...capturesRef.current.filter((c) => c.id !== added.id), added]);
+    const ids = pickToPrune(all, MAX_PHOTOS);
+    for (const id of ids) {
+      const c = all.find((x) => x.id === id);
+      if (c) await removeCapture(c);
+    }
+    if (ids.length > 0) setPruned((n) => n + ids.length);
+  }
+
   async function addFiles(e: ChangeEvent<HTMLInputElement>, fromAlbum: boolean) {
     const files = Array.from(e.target.files ?? []);
     e.target.value = "";
-    if (!files.length || !user || !sessionId) return;
+    if (!files.length) return;
     setError(null);
-    const supabase = getSupabase();
     for (const file of files) {
       setUploading((n) => n + 1);
       try {
-        const blurOn = getFaceBlurSetting();
-        const prepared = await preparePhoto(file, { blur: blurOn });
-        if (blurOn && !prepared.faceBlurred) setFaceWarning(true);
-        const path = `${user.id}/${sessionId}/${crypto.randomUUID()}.jpg`;
-        const up = await supabase.storage
-          .from(CAPTURE_BUCKET)
-          .upload(path, prepared.blob, { contentType: "image/jpeg" });
-        if (up.error) throw new Error(up.error.message);
-        const takenAt = new Date(fromAlbum && file.lastModified ? file.lastModified : Date.now()).toISOString();
-        const { data, error } = await supabase
-          .from("captures")
-          .insert({ session_id: sessionId, storage_path: path, taken_at: takenAt, face_blurred: prepared.faceBlurred })
-          .select("*")
-          .single();
-        if (error || !data) throw new Error(error?.message ?? "写真を保存できませんでした");
-        if (prepared.facesFound > 0) {
-          originals.current.set(data.id, file);
-          setFaces((f) => ({ ...f, [data.id]: prepared.facesFound }));
-        }
-        const url = URL.createObjectURL(prepared.blob);
-        setCaptures((prev) =>
-          [...prev, { ...(data as Capture), url }].sort(
-            (a, b) => new Date(a.taken_at).getTime() - new Date(b.taken_at).getTime(),
-          ),
-        );
+        const takenAt = fromAlbum && file.lastModified ? new Date(file.lastModified).toISOString() : nowIso();
+        const added = await uploadOne(file, "manual", takenAt);
+        await pruneIfNeeded(added);
       } catch (err) {
         setError(err instanceof Error ? err.message : "写真を保存できませんでした");
       } finally {
         setUploading((n) => n - 1);
       }
+    }
+  }
+
+  /** 自動撮影の1枚を保存する（エラーはカメラ画面に表示する） */
+  async function autoCapture(file: File) {
+    setUploading((n) => n + 1);
+    try {
+      const added = await uploadOne(file, "auto", nowIso());
+      await pruneIfNeeded(added);
+    } finally {
+      setUploading((n) => n - 1);
     }
   }
 
@@ -205,6 +253,10 @@ export function CookClient() {
 
   return (
     <AppShell>
+      {autoOpen && (
+        <AutoCamera onCapture={autoCapture} onClose={() => setAutoOpen(false)} photoCount={captures.length} />
+      )}
+
       {analyzing && (
         <div className="fixed inset-0 z-20 grid place-items-center bg-ink/70 p-6 text-center text-white">
           <div>
@@ -232,6 +284,22 @@ export function CookClient() {
         )}
       </div>
 
+      <button
+        className="btn mb-3 w-full py-3"
+        disabled={!session}
+        onClick={() => {
+          setError(null);
+          setAutoOpen(true);
+        }}
+      >
+        スタンドに置いて自動で撮る
+      </button>
+      {pruned > 0 && (
+        <p className="mb-3 text-xs text-ink-soft">
+          写真が{MAX_PHOTOS}枚を超えたため、似た自動撮影の写真を{pruned}枚整理しました。
+        </p>
+      )}
+
       <div className="mb-4 rounded-xl bg-mustard/15 p-3 text-xs leading-relaxed text-ink-soft">
         材料を並べたところ、切ったあと、火にかけたとき、火を止めたときに撮ると、分量と加熱時間が正確になります。
       </div>
@@ -254,6 +322,11 @@ export function CookClient() {
               <span className="absolute left-1 top-1 rounded-md bg-ink/75 px-1.5 text-[11px] font-bold text-white">
                 {i + 1}
               </span>
+              {c.source === "auto" && (
+                <span className="absolute bottom-1 left-1 rounded-md bg-basil/90 px-1.5 text-[10px] font-bold text-white">
+                  自動
+                </span>
+              )}
             </div>
             <div className="min-w-0 flex-1">
               <div className="mb-1 flex items-center justify-between text-xs text-ink-soft">

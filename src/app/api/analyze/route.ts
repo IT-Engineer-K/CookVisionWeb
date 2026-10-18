@@ -1,10 +1,8 @@
 import { createClient } from "@supabase/supabase-js";
 import { analyzeCookingPhotos } from "@/lib/ai";
 import { boxToCrop } from "@/lib/crop";
+import { MAX_PHOTOS } from "@/lib/limits";
 import type { AiPhoto } from "@/lib/ai/recipe-schema";
-
-/** 1回の解析に使う写真の上限（費用と処理時間を抑える） */
-const MAX_PHOTOS = 20;
 
 // AI の解析は数十秒かかることがあるため、上限を長めにとる（Vercel の上限はプランで異なる）
 export const maxDuration = 60;

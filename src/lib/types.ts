@@ -21,7 +21,11 @@ export type Capture = {
   note: string | null;
   face_blurred: boolean;
   crop: Crop | null;
+  source: CaptureSource;
+  signature: number[] | null;
 };
+
+export type CaptureSource = "manual" | "auto";
 
 /** 写真の中の切り抜き範囲（左上を0、右下を1とした割合） */
 export type Crop = { x: number; y: number; w: number; h: number };
