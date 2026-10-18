@@ -187,7 +187,7 @@ export function RecipeClient() {
           {isNew && (
             <div className="rounded-xl bg-basil/10 p-3 text-sm text-basil">
               AIがレシピの下書きを作りました。
-              {lowCount > 0 ? `「要確認」の${lowCount}項目を確かめて、保存してください。` : "内容を確かめて、保存してください。"}
+              {lowCount > 0 ? `「要確認」の${lowCount}項目を確かめて、必要なら直して保存してください。` : "内容を確かめて、必要なら直して保存してください。"}
             </div>
           )}
 
@@ -374,7 +374,7 @@ export function RecipeClient() {
         <div className="fixed inset-x-0 bottom-0 z-10 border-t border-line bg-paper/95 backdrop-blur">
           <div className="mx-auto flex max-w-xl items-center gap-3 px-4 py-3">
             <p className={`flex-1 text-sm ${notice?.kind === "error" ? "text-tomato" : "text-ink-soft"}`}>
-              {notice?.text ?? (dirty ? "未保存の変更があります" : "")}
+              {notice?.text ?? (dirty ? "未保存の変更があります" : isNew ? "自動保存しました" : "")}
             </p>
             <Link href="/" className="btn">
               一覧へ

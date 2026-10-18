@@ -123,6 +123,22 @@ create policy "own steps" on public.recipe_steps
   for all using (user_id = auth.uid()) with check (user_id = auth.uid());
 
 -- ============================================================
+-- Data API（supabase-js）からの利用を許可する
+-- 「Automatically expose new tables」をオフにしたプロジェクトでは、これが必要
+-- 未ログイン（anon）には何も許可せず、ログイン中のユーザーだけに許可する
+-- ============================================================
+
+grant usage on schema public to authenticated;
+grant select, insert, update, delete on
+  public.profiles,
+  public.cooking_sessions,
+  public.captures,
+  public.recipes,
+  public.recipe_ingredients,
+  public.recipe_steps
+to authenticated;
+
+-- ============================================================
 -- 写真の保存先（非公開バケット。本人のフォルダだけ読み書きできる）
 -- パスの形式: <user_id>/<session_id>/<ファイル名>.jpg
 -- ============================================================
