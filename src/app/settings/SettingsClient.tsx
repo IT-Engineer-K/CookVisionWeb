@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/components/AuthProvider";
+import { getFaceBlurSetting, setFaceBlurSetting } from "@/lib/image";
 import { getSupabase } from "@/lib/supabase";
 
 /** 設定：学習利用の同意（オプトイン）とログアウト */
@@ -13,6 +14,8 @@ export function SettingsClient() {
   const [allow, setAllow] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  // 端末の設定を読む（サーバー側では読めないため初期値のオンになる）
+  const [faceBlur, setFaceBlur] = useState(getFaceBlurSetting);
 
   useEffect(() => {
     if (!user) return;
@@ -60,6 +63,23 @@ export function SettingsClient() {
             <span className="block font-bold">写真とレシピをAIの改善に使ってよい</span>
             <span className="mt-1 block text-xs leading-relaxed text-ink-soft">
               オンにすると、あなたが撮った写真と修正したレシピを、CookVision のAIの精度向上に使うことがあります。オフのままなら使いません。
+            </span>
+          </span>
+        </label>
+        <label className="card flex cursor-pointer items-start gap-3">
+          <input
+            type="checkbox"
+            className="mt-1 h-5 w-5 accent-tomato"
+            checked={faceBlur}
+            onChange={(e) => {
+              setFaceBlur(e.target.checked);
+              setFaceBlurSetting(e.target.checked);
+            }}
+          />
+          <span>
+            <span className="block font-bold">人の顔に自動でモザイクをかける</span>
+            <span className="mt-1 block text-xs leading-relaxed text-ink-soft">
+              この端末だけの設定です。オフにすると、顔が写った写真もそのまま保存・解析に送られます。
             </span>
           </span>
         </label>

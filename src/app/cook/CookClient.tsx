@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/components/AuthProvider";
-import { preloadFaceDetector, preparePhoto } from "@/lib/image";
+import { getFaceBlurSetting, preloadFaceDetector, preparePhoto } from "@/lib/image";
 import { CAPTURE_BUCKET, getSupabase } from "@/lib/supabase";
 import type { Capture, CookingSession } from "@/lib/types";
 
@@ -32,6 +32,10 @@ export function CookClient() {
   const [error, setError] = useState<string | null>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   const albumRef = useRef<HTMLInputElement>(null);
+  // モザイクを外せるように、この画面を開いている間だけ元の写真を持っておく
+  const originals = useRef(new Map<string, File>());
+  const [faces, setFaces] = useState<Record<string, number>>({});
+  const [unblurring, setUnblurring] = useState<string | null>(null);
 
   useEffect(() => {
     preloadFaceDetector();
@@ -82,8 +86,9 @@ export function CookClient() {
     for (const file of files) {
       setUploading((n) => n + 1);
       try {
-        const prepared = await preparePhoto(file);
-        if (!prepared.faceBlurred) setFaceWarning(true);
+        const blurOn = getFaceBlurSetting();
+        const prepared = await preparePhoto(file, { blur: blurOn });
+        if (blurOn && !prepared.faceBlurred) setFaceWarning(true);
         const path = `${user.id}/${sessionId}/${crypto.randomUUID()}.jpg`;
         const up = await supabase.storage
           .from(CAPTURE_BUCKET)
@@ -96,6 +101,10 @@ export function CookClient() {
           .select("*")
           .single();
         if (error || !data) throw new Error(error?.message ?? "写真を保存できませんでした");
+        if (prepared.facesFound > 0) {
+          originals.current.set(data.id, file);
+          setFaces((f) => ({ ...f, [data.id]: prepared.facesFound }));
+        }
         const url = URL.createObjectURL(prepared.blob);
         setCaptures((prev) =>
           [...prev, { ...(data as Capture), url }].sort(
@@ -112,6 +121,39 @@ export function CookClient() {
 
   async function saveNote(id: string, note: string) {
     await getSupabase().from("captures").update({ note: note.trim() || null }).eq("id", id);
+  }
+
+  /** モザイクを誤ってかけた写真を、元の写真で差し替える */
+  async function unblur(c: CaptureView) {
+    const file = originals.current.get(c.id);
+    if (!file || !user || !sessionId) return;
+    setUnblurring(c.id);
+    setError(null);
+    const supabase = getSupabase();
+    try {
+      const prepared = await preparePhoto(file, { blur: false });
+      const path = `${user.id}/${sessionId}/${crypto.randomUUID()}.jpg`;
+      const up = await supabase.storage.from(CAPTURE_BUCKET).upload(path, prepared.blob, { contentType: "image/jpeg" });
+      if (up.error) throw new Error(up.error.message);
+      const { error } = await supabase
+        .from("captures")
+        .update({ storage_path: path, face_blurred: false })
+        .eq("id", c.id);
+      if (error) throw new Error(error.message);
+      await supabase.storage.from(CAPTURE_BUCKET).remove([c.storage_path]);
+      originals.current.delete(c.id);
+      setFaces((f) => {
+        const next = { ...f };
+        delete next[c.id];
+        return next;
+      });
+      const url = URL.createObjectURL(prepared.blob);
+      setCaptures((prev) => prev.map((x) => (x.id === c.id ? { ...x, storage_path: path, face_blurred: false, url } : x)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "モザイクを外せませんでした");
+    } finally {
+      setUnblurring(null);
+    }
   }
 
   async function removeCapture(c: CaptureView) {
@@ -220,6 +262,18 @@ export function CookClient() {
                   削除
                 </button>
               </div>
+              {faces[c.id] > 0 && (
+                <div className="mb-1 flex items-center justify-between rounded-lg bg-mustard/15 px-2 py-1 text-xs text-ink-soft">
+                  <span>顔と判定した{faces[c.id]}箇所にモザイク</span>
+                  <button
+                    className="font-bold underline disabled:opacity-50"
+                    disabled={unblurring === c.id}
+                    onClick={() => unblur(c)}
+                  >
+                    {unblurring === c.id ? "処理中…" : "外す"}
+                  </button>
+                </div>
+              )}
               <textarea
                 className="input h-16 resize-none text-sm"
                 placeholder="メモ（例：塩少々、中火）"
