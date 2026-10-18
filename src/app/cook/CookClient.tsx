@@ -222,7 +222,19 @@ export function CookClient() {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${auth.access_token}` },
         body: JSON.stringify({ sessionId }),
       });
-      const body = (await res.json()) as { recipeId?: string; error?: string };
+      // 時間切れなどでは JSON ではない文章が返るため、読めなければ日本語の案内に置き換える
+      const text = await res.text();
+      let body: { recipeId?: string; error?: string };
+      try {
+        body = JSON.parse(text) as typeof body;
+      } catch {
+        body = {
+          error:
+            res.status === 504
+              ? "解析に時間がかかりすぎました。写真は保存されているので、もう一度「調理終了」を押してください。"
+              : `解析に失敗しました（${res.status}）。写真は保存されているので、もう一度「調理終了」を押してください。`,
+        };
+      }
       if (!res.ok || !body.recipeId) throw new Error(body.error ?? "解析に失敗しました");
       router.push(`/recipe?id=${body.recipeId}&new=1`);
     } catch (err) {

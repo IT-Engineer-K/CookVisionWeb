@@ -4,8 +4,8 @@ import { boxToCrop } from "@/lib/crop";
 import { MAX_PHOTOS } from "@/lib/limits";
 import type { AiPhoto } from "@/lib/ai/recipe-schema";
 
-// AI の解析は数十秒かかることがあるため、上限を長めにとる（Vercel の上限はプランで異なる）
-export const maxDuration = 60;
+// 写真20枚の解析と混雑時のやり直しで60秒を超えることがあるため、Hobby プランの上限（300秒）にする
+export const maxDuration = 300;
 
 type Body = { sessionId?: string };
 
@@ -71,18 +71,20 @@ export async function POST(request: Request) {
       new Date(session.started_at).getTime(),
       new Date(captures[0].taken_at).getTime(),
     );
-    const photos: AiPhoto[] = [];
-    for (const c of captures) {
-      const { data: file, error } = await supabase.storage.from("captures").download(c.storage_path);
-      if (error || !file) throw new Error(`写真を読み込めませんでした: ${error?.message ?? ""}`);
-      const buf = Buffer.from(await file.arrayBuffer());
-      photos.push({
-        base64: buf.toString("base64"),
-        mimeType: file.type || "image/jpeg",
-        elapsedMin: Math.max(0, Math.round((new Date(c.taken_at).getTime() - startedAt) / 60000)),
-        note: c.note,
-      });
-    }
+    // 写真はまとめて並行に読み込む（1枚ずつだと枚数に比例して遅くなる）
+    const photos: AiPhoto[] = await Promise.all(
+      captures.map(async (c) => {
+        const { data: file, error } = await supabase.storage.from("captures").download(c.storage_path);
+        if (error || !file) throw new Error(`写真を読み込めませんでした: ${error?.message ?? ""}`);
+        const buf = Buffer.from(await file.arrayBuffer());
+        return {
+          base64: buf.toString("base64"),
+          mimeType: file.type || "image/jpeg",
+          elapsedSec: Math.max(0, Math.round((new Date(c.taken_at).getTime() - startedAt) / 1000)),
+          note: c.note,
+        };
+      }),
+    );
 
     const result = await analyzeCookingPhotos(photos);
     const r = result.recipe;

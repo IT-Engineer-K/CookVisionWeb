@@ -29,7 +29,9 @@ export async function analyzeWithGemini(
   const parts: GeminiPart[] = [{ text: RECIPE_PROMPT }];
   photos.forEach((p, i) => {
     const memo = p.note ? `、メモ「${p.note}」` : "";
-    parts.push({ text: `写真${i}（開始から${p.elapsedMin}分${memo}）` });
+    const m = Math.floor(p.elapsedSec / 60);
+    const s = p.elapsedSec % 60;
+    parts.push({ text: `写真${i}（開始から${m}分${s}秒${memo}）` });
     parts.push({ inline_data: { mime_type: p.mimeType, data: p.base64 } });
   });
 
