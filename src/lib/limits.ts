@@ -1,2 +1,2 @@
 /** 1回の解析に使う写真の上限（費用と処理時間を抑える）。自動撮影はこの枚数に収まるよう間引く */
-export const MAX_PHOTOS = 20;
+export const MAX_PHOTOS = 40;
