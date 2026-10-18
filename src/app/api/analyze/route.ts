@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { analyzeCookingPhotos } from "@/lib/ai";
+import { boxToCrop } from "@/lib/crop";
 import type { AiPhoto } from "@/lib/ai/recipe-schema";
 
 /** 1回の解析に使う写真の上限（費用と処理時間を抑える） */
@@ -134,6 +135,15 @@ export async function POST(request: Request) {
         })),
       );
       if (error) throw new Error(error.message);
+    }
+
+    // 自動トリミング：写真ごとの切り抜き範囲を保存する（失敗してもレシピ作成は止めない）
+    for (const c of r.crops) {
+      const cap = captures[c.photo_index];
+      const crop = cap ? boxToCrop(c.box_2d) : null;
+      if (!cap || !crop) continue;
+      const { error } = await supabase.from("captures").update({ crop }).eq("id", cap.id);
+      if (error) console.warn("[analyze] crop", error.message);
     }
 
     await supabase.from("cooking_sessions").update({ status: "done" }).eq("id", sessionId);

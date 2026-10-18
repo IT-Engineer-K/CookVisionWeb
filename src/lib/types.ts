@@ -20,7 +20,11 @@ export type Capture = {
   taken_at: string;
   note: string | null;
   face_blurred: boolean;
+  crop: Crop | null;
 };
+
+/** 写真の中の切り抜き範囲（左上を0、右下を1とした割合） */
+export type Crop = { x: number; y: number; w: number; h: number };
 
 export type Recipe = {
   id: string;

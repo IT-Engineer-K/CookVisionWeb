@@ -6,8 +6,9 @@ import { useEffect, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/components/AuthProvider";
 import { ConfidenceBadge } from "@/components/Confidence";
+import { CroppedImage } from "@/components/CroppedImage";
 import { CAPTURE_BUCKET, getSupabase } from "@/lib/supabase";
-import type { Recipe, RecipeIngredient, RecipeStep } from "@/lib/types";
+import type { Crop, Recipe, RecipeIngredient, RecipeStep } from "@/lib/types";
 
 type IngDraft = Omit<RecipeIngredient, "id" | "recipe_id" | "position"> & { key: string };
 type StepDraft = Omit<RecipeStep, "id" | "recipe_id" | "position"> & { key: string };
@@ -28,7 +29,7 @@ export function RecipeClient() {
   const [description, setDescription] = useState("");
   const [ingredients, setIngredients] = useState<IngDraft[]>([]);
   const [steps, setSteps] = useState<StepDraft[]>([]);
-  const [photoUrls, setPhotoUrls] = useState<Record<string, string>>({});
+  const [photoUrls, setPhotoUrls] = useState<Record<string, { url: string; crop: Crop | null }>>({});
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<{ kind: "error" | "info"; text: string } | null>(null);
@@ -56,7 +57,7 @@ export function RecipeClient() {
 
       const captureIds = stepRows.map((s) => s.capture_id).filter((v): v is string => Boolean(v));
       if (captureIds.length > 0) {
-        const { data: caps } = await supabase.from("captures").select("id, storage_path").in("id", captureIds);
+        const { data: caps } = await supabase.from("captures").select("id, storage_path, crop").in("id", captureIds);
         if (caps && caps.length > 0) {
           const { data: signed } = await supabase.storage
             .from(CAPTURE_BUCKET)
@@ -64,10 +65,10 @@ export function RecipeClient() {
               caps.map((c) => c.storage_path),
               60 * 60,
             );
-          const map: Record<string, string> = {};
+          const map: Record<string, { url: string; crop: Crop | null }> = {};
           caps.forEach((c, i) => {
             const u = signed?.[i]?.signedUrl;
-            if (u) map[c.id] = u;
+            if (u) map[c.id] = { url: u, crop: (c.crop as Crop | null) ?? null };
           });
           setPhotoUrls(map);
         }
@@ -313,8 +314,11 @@ export function RecipeClient() {
                   </div>
                   <div className="flex gap-3">
                     {s.capture_id && photoUrls[s.capture_id] && (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={photoUrls[s.capture_id]} alt="" className="h-20 w-20 shrink-0 rounded-lg object-cover" />
+                      <CroppedImage
+                        src={photoUrls[s.capture_id].url}
+                        crop={photoUrls[s.capture_id].crop}
+                        className="h-20 w-20 shrink-0 rounded-lg"
+                      />
                     )}
                     <textarea
                       className="input min-h-20 flex-1 text-sm"

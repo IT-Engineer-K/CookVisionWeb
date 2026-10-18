@@ -82,6 +82,9 @@ create table if not exists public.recipe_steps (
   ai_text text
 );
 
+-- 自動トリミング：AIが返した「料理に関係する範囲」（0〜1の割合。元の写真は加工しない）
+alter table public.captures add column if not exists crop jsonb;
+
 create index if not exists captures_session_idx on public.captures (session_id, taken_at);
 create index if not exists recipes_user_idx on public.recipes (user_id, created_at desc);
 create index if not exists ingredients_recipe_idx on public.recipe_ingredients (recipe_id, position);

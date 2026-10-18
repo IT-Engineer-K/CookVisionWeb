@@ -35,6 +35,14 @@ export const aiRecipeSchema = z.object({
       }),
     )
     .catch([]),
+  crops: z
+    .array(
+      z.object({
+        photo_index: z.coerce.number().int().nonnegative(),
+        box_2d: z.array(z.coerce.number()).length(4),
+      }),
+    )
+    .catch([]),
 });
 
 export type AiRecipe = z.infer<typeof aiRecipeSchema>;
@@ -60,6 +68,7 @@ export const RECIPE_PROMPT = `あなたは料理の記録係です。
 - 加熱時間は、加熱の開始と終了が写っている写真の経過分の差から推定する。わからなければ null。
 - 各手順が主にどの写真に対応するかを photo_index（0始まり）で示す。
 - 火加減は「弱火」「中火」「強火」などで書く。加熱しない手順は null。
+- 各写真について、料理に関係する範囲（食材・調理器具・手元）を囲む枠を crops に入れる。枠は [ymin, xmin, ymax, xmax] で、写真の左上を0、右下を1000とした整数にする。
 
 次のJSON形式だけを返してください。説明文やコードブロックは付けないでください。
 {
@@ -71,6 +80,9 @@ export const RECIPE_PROMPT = `あなたは料理の記録係です。
   ],
   "steps": [
     { "text": "手順", "heat": "火加減" または null, "duration_min": 分 または null, "photo_index": 番号 または null, "confidence": "high|medium|low" }
+  ],
+  "crops": [
+    { "photo_index": 番号, "box_2d": [ymin, xmin, ymax, xmax] }
   ]
 }`;
 
