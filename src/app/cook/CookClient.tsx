@@ -291,7 +291,7 @@ export function CookClient() {
           <div>
             <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-white/30 border-t-white" />
             <p className="text-lg font-bold">AIがレシピを書いています</p>
-            <p className="mt-1 text-sm text-white/80">写真{visible.length}枚を解析中。数十秒かかることがあります。</p>
+            <p className="mt-1 text-sm text-white/80">写真{visible.length}枚を解析中。数分かかることがあります。</p>
           </div>
         </div>
       )}

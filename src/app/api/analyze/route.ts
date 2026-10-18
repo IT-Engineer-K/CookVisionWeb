@@ -4,7 +4,7 @@ import { boxToCrop } from "@/lib/crop";
 import { MAX_PHOTOS } from "@/lib/limits";
 import type { AiPhoto } from "@/lib/ai/recipe-schema";
 
-// 写真20枚の解析と混雑時のやり直しで60秒を超えることがあるため、Hobby プランの上限（300秒）にする
+// 写真40枚の解析と混雑時のやり直しで60秒を超えることがあるため、Hobby プランの上限（300秒）にする
 export const maxDuration = 300;
 
 type Body = { sessionId?: string };
