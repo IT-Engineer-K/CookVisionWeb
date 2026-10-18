@@ -23,6 +23,8 @@ export type Capture = {
   crop: Crop | null;
   source: CaptureSource;
   signature: number[] | null;
+  /** 上限を超えて間引いた写真（解析には送らない） */
+  pruned: boolean;
 };
 
 export type CaptureSource = "manual" | "auto";

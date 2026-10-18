@@ -45,7 +45,6 @@ export function CookClient() {
   const [faces, setFaces] = useState<Record<string, number>>({});
   const [unblurring, setUnblurring] = useState<string | null>(null);
   const [autoOpen, setAutoOpen] = useState(false);
-  const [pruned, setPruned] = useState(0);
   // 自動撮影の間引きで最新の一覧を参照するため
   const capturesRef = useRef<CaptureView[]>([]);
   useEffect(() => {
@@ -126,15 +125,30 @@ export function CookClient() {
     return view;
   }
 
-  /** 上限を超えたら、自動撮影の写真のうち前後と似ているものから削る */
+  /**
+   * 上限を超えたら、自動撮影の写真のうち前後と似ているものから間引く。
+   * 試作中は消さずに印（pruned）を付けるだけにして、あとで何を間引いたか確認できるようにする。
+   */
   async function pruneIfNeeded(added: CaptureView) {
-    const all = byTime([...capturesRef.current.filter((c) => c.id !== added.id), added]);
+    const all = byTime([...capturesRef.current.filter((c) => c.id !== added.id && !c.pruned), added]);
     const ids = pickToPrune(all, MAX_PHOTOS);
-    for (const id of ids) {
-      const c = all.find((x) => x.id === id);
-      if (c) await removeCapture(c);
+    if (ids.length === 0) return;
+    const { error } = await getSupabase().from("captures").update({ pruned: true }).in("id", ids);
+    if (error) throw new Error(error.message);
+    setCaptures((prev) => prev.map((x) => (ids.includes(x.id) ? { ...x, pruned: true } : x)));
+  }
+
+  /** 間引いた写真を戻す。利用者が選んだ写真なので、手動で撮った写真と同じく以後は間引かない */
+  async function restoreCapture(c: CaptureView) {
+    const { error } = await getSupabase()
+      .from("captures")
+      .update({ pruned: false, source: "manual" })
+      .eq("id", c.id);
+    if (error) {
+      setError(error.message);
+      return;
     }
-    if (ids.length > 0) setPruned((n) => n + ids.length);
+    setCaptures((prev) => prev.map((x) => (x.id === c.id ? { ...x, pruned: false, source: "manual" } : x)));
   }
 
   async function addFiles(e: ChangeEvent<HTMLInputElement>, fromAlbum: boolean) {
@@ -243,12 +257,15 @@ export function CookClient() {
     }
   }
 
+  const visible = captures.filter((c) => !c.pruned);
+  const prunedList = captures.filter((c) => c.pruned);
+
   // 経過時間の起点。アルバムの写真が開始より前なら、その時刻を起点にする（解析APIと同じ考え方）
   const origin = session
     ? new Date(
         Math.min(
           new Date(session.started_at).getTime(),
-          captures[0] ? new Date(captures[0].taken_at).getTime() : Infinity,
+          visible[0] ? new Date(visible[0].taken_at).getTime() : Infinity,
         ),
       ).toISOString()
     : null;
@@ -266,7 +283,7 @@ export function CookClient() {
   return (
     <AppShell>
       {autoOpen && (
-        <AutoCamera onCapture={autoCapture} onClose={() => setAutoOpen(false)} photoCount={captures.length} />
+        <AutoCamera onCapture={autoCapture} onClose={() => setAutoOpen(false)} photoCount={visible.length} />
       )}
 
       {analyzing && (
@@ -274,7 +291,7 @@ export function CookClient() {
           <div>
             <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-white/30 border-t-white" />
             <p className="text-lg font-bold">AIがレシピを書いています</p>
-            <p className="mt-1 text-sm text-white/80">写真{captures.length}枚を解析中。数十秒かかることがあります。</p>
+            <p className="mt-1 text-sm text-white/80">写真{visible.length}枚を解析中。数十秒かかることがあります。</p>
           </div>
         </div>
       )}
@@ -306,10 +323,30 @@ export function CookClient() {
       >
         スタンドに置いて自動で撮る
       </button>
-      {pruned > 0 && (
-        <p className="mb-3 text-xs text-ink-soft">
-          写真が{MAX_PHOTOS}枚を超えたため、似た自動撮影の写真を{pruned}枚整理しました。
-        </p>
+      {prunedList.length > 0 && (
+        <details className="mb-3 rounded-xl border border-line p-3 text-xs text-ink-soft">
+          <summary className="cursor-pointer">
+            写真が{MAX_PHOTOS}枚を超えたため、似た自動撮影の写真を{prunedList.length}枚間引きました（解析には使いません）
+          </summary>
+          <ul className="mt-3 grid grid-cols-3 gap-2">
+            {prunedList.map((c) => (
+              <li key={c.id} className="space-y-1">
+                <div className="aspect-square overflow-hidden rounded-lg bg-line">
+                  {c.url && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={c.url} alt="間引いた写真" className="h-full w-full object-cover" />
+                  )}
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>{origin ? elapsedLabel(origin, c.taken_at) : ""}</span>
+                  <button className="font-bold underline" onClick={() => restoreCapture(c)}>
+                    戻す
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </details>
       )}
 
       <div className="mb-4 rounded-xl bg-mustard/15 p-3 text-xs leading-relaxed text-ink-soft">
@@ -324,7 +361,7 @@ export function CookClient() {
       {error && <p className="mb-3 rounded-xl bg-tomato/10 p-3 text-sm text-tomato">{error}</p>}
 
       <ol className="space-y-3">
-        {captures.map((c, i) => (
+        {visible.map((c, i) => (
           <li key={c.id} className="card flex gap-3 p-3">
             <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-xl bg-line">
               {c.url && (
@@ -371,7 +408,7 @@ export function CookClient() {
         {uploading > 0 && (
           <li className="card p-3 text-center text-sm text-ink-soft">写真を処理中…（{uploading}枚）</li>
         )}
-        {captures.length === 0 && uploading === 0 && (
+        {visible.length === 0 && uploading === 0 && (
           <li className="card py-10 text-center text-sm text-ink-soft">下のボタンで、最初の工程を撮影してください。</li>
         )}
       </ol>
@@ -389,7 +426,7 @@ export function CookClient() {
           </button>
           <button
             className="btn h-14 flex-[1.4] border-ink bg-ink text-white hover:bg-ink/90"
-            disabled={captures.length === 0 || uploading > 0 || analyzing}
+            disabled={visible.length === 0 || uploading > 0 || analyzing}
             onClick={finish}
           >
             調理終了

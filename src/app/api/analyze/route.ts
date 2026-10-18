@@ -61,6 +61,7 @@ export async function POST(request: Request) {
       .from("captures")
       .select("id, storage_path, taken_at, note")
       .eq("session_id", sessionId)
+      .eq("pruned", false)
       .order("taken_at", { ascending: true })
       .limit(MAX_PHOTOS);
     if (capError) throw new Error(capError.message);
