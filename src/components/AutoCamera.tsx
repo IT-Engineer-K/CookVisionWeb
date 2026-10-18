@@ -1,18 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { contrastOf, frameDiff, signatureOf } from "@/lib/frame";
+import { contrastOf, signatureOf } from "@/lib/frame";
 
-/** 映像を調べる間隔 */
-const SAMPLE_MS = 1000;
-/** 自動撮影どうしの最短間隔 */
-const MIN_INTERVAL_MS = 30_000;
-/** 前に撮った写真からこれ以上変わったら「工程が進んだ」とみなす（0〜255） */
-const CHANGE_THRESHOLD = 12;
-/** 1秒前とこれ未満の差なら「動きが落ち着いた」とみなす */
-const STABLE_THRESHOLD = 4;
-/** 落ち着いた状態が何回続いたら撮るか */
-const STABLE_SAMPLES = 2;
+/** 撮影の間隔。工程の区切りは撮ったあとで似た写真を間引いて残す（src/lib/prune.ts） */
+const INTERVAL_MS = 5000;
 /** 明暗のばらつきがこれ未満の画面（スマホが倒れて真っ黒など）は撮らない */
 const MIN_CONTRAST = 8;
 
@@ -33,8 +25,8 @@ function grab(video: HTMLVideoElement): Promise<File> {
 }
 
 /**
- * 自動撮影：スタンドに置いたスマホのカメラ映像を見て、
- * 映像が大きく変わり、動きが落ち着いたところで1枚撮る（最短30秒おき）。
+ * 自動撮影：スタンドに置いたスマホのカメラで、5秒おきに1枚撮る。
+ * 上限を超えた分は、呼び出し側で前後と似た写真から間引く。
  */
 export function AutoCamera({
   onCapture,
@@ -61,40 +53,18 @@ export function AutoCamera({
     let wakeLock: WakeLockSentinel | null = null;
     let cancelled = false;
     let busy = false;
-    let lastSaved: number[] | null = null;
-    let lastSavedAt = 0;
-    let prev: number[] | null = null;
-    let stable = 0;
 
     async function tick() {
       const v = videoRef.current;
       if (!v || v.readyState < 2 || busy || !v.videoWidth) return;
       const sig = signatureOf(v, v.videoWidth, v.videoHeight);
       if (contrastOf(sig) < MIN_CONTRAST) {
-        prev = null;
-        stable = 0;
         setStatus("映像が暗いか、ほぼ一色です。スマホが倒れていないか確認してください");
-        return;
-      }
-      stable = prev && frameDiff(prev, sig) < STABLE_THRESHOLD ? stable + 1 : 0;
-      prev = sig;
-      const changed = !lastSaved || frameDiff(lastSaved, sig) > CHANGE_THRESHOLD;
-      const waited = Date.now() - lastSavedAt >= MIN_INTERVAL_MS;
-      if (!changed) return;
-      if (!waited) {
-        setStatus("変化あり。前の撮影から30秒たったら撮ります");
-        return;
-      }
-      if (stable < STABLE_SAMPLES) {
-        setStatus("動きが落ち着くのを待っています");
         return;
       }
       busy = true;
       try {
         const file = await grab(v);
-        lastSaved = sig;
-        lastSavedAt = Date.now();
-        stable = 0;
         await onCaptureRef.current(file);
         setShots((n) => n + 1);
         setStatus(`${new Date().toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit", second: "2-digit" })} に撮影しました`);
@@ -125,8 +95,8 @@ export function AutoCamera({
         } catch {
           // 未対応でも撮影は続ける
         }
-        setStatus("最初の1枚を撮るため、動きが落ち着くのを待っています");
-        timer = window.setInterval(() => void tick(), SAMPLE_MS);
+        setStatus("5秒おきに撮影します");
+        timer = window.setInterval(() => void tick(), INTERVAL_MS);
       } catch {
         setError("カメラを使えませんでした。ブラウザのカメラの許可を確認してください。");
       }
