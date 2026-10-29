@@ -1,8 +1,8 @@
 import type { MetadataRoute } from "next";
 
-/** 試作版のため、すべての検索エンジンにクロールを拒否する */
+/** 一般公開：検索エンジンのクロールを許可する（APIだけは対象外にする） */
 export default function robots(): MetadataRoute.Robots {
   return {
-    rules: { userAgent: "*", disallow: "/" },
+    rules: { userAgent: "*", allow: "/", disallow: "/api/" },
   };
 }
