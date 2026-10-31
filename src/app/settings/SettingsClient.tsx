@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { AppShell } from "@/components/AppShell";
@@ -14,6 +15,7 @@ export function SettingsClient() {
   const [allow, setAllow] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
   // 端末の設定を読む（サーバー側では読めないため初期値のオンになる）
   const [faceBlur, setFaceBlur] = useState(getFaceBlurSetting);
 
@@ -38,6 +40,25 @@ export function SettingsClient() {
   }
 
   async function logout() {
+    await getSupabase().auth.signOut();
+    router.replace("/login");
+  }
+
+  /** 退会：サーバー側で写真・レシピ・アカウントを消してからログアウトする */
+  async function deleteAccount() {
+    if (!window.confirm("退会すると、写真とレシピがすべて削除され、元に戻せません。退会しますか？")) return;
+    setDeleting(true);
+    setMessage(null);
+    const { data } = await getSupabase().auth.getSession();
+    const res = await fetch("/api/account/delete", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${data.session?.access_token ?? ""}` },
+    }).catch(() => null);
+    if (!res || !res.ok) {
+      setDeleting(false);
+      setMessage("退会できませんでした。時間をおいてもう一度お試しください。");
+      return;
+    }
     await getSupabase().auth.signOut();
     router.replace("/login");
   }
@@ -93,6 +114,19 @@ export function SettingsClient() {
         <button onClick={logout} className="btn w-full">
           ログアウト
         </button>
+
+        <button
+          onClick={deleteAccount}
+          disabled={deleting}
+          className="w-full py-2 text-center text-sm text-tomato underline disabled:opacity-50"
+        >
+          {deleting ? "退会処理中…" : "退会する（アカウントとデータを削除）"}
+        </button>
+
+        <p className="flex justify-center gap-4 pt-2 text-xs text-ink-soft">
+          <Link href="/terms" className="underline">利用規約</Link>
+          <Link href="/privacy" className="underline">プライバシーポリシー</Link>
+        </p>
       </div>
     </AppShell>
   );

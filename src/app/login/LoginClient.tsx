@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import { AppShell } from "@/components/AppShell";
@@ -93,6 +94,12 @@ export function LoginClient() {
         {message && (
           <p className={message.kind === "error" ? "text-sm text-tomato" : "text-sm text-basil"}>{message.text}</p>
         )}
+
+        <p className="text-xs leading-relaxed text-ink-soft">
+          続けると、<Link href="/terms" className="underline">利用規約</Link>と
+          <Link href="/privacy" className="underline">プライバシーポリシー</Link>
+          に同意したものとみなします。18歳未満の方は利用できません。
+        </p>
 
         <button
           className="w-full text-center text-sm text-ink-soft underline"
