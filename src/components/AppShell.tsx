@@ -12,7 +12,8 @@ function Header() {
     <header className="sticky top-0 z-10 border-b border-line bg-paper/90 backdrop-blur">
       <div className="mx-auto flex h-14 max-w-xl items-center justify-between px-4">
         <Link href="/" className="flex items-center gap-2 font-bold tracking-tight">
-          <span className="grid h-7 w-7 place-items-center rounded-lg bg-tomato text-sm text-white">CV</span>
+          {/* eslint-disable-next-line @next/next/no-img-element -- 小さな静的SVGなので最適化は不要 */}
+          <img src="/icon.svg" alt="" width={28} height={28} className="h-7 w-7 rounded-lg" />
           CookVision
         </Link>
         {user && (
