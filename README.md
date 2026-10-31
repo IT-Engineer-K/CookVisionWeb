@@ -16,7 +16,7 @@
 | F-07 | レシピの編集（材料・手順の追加、削除、並べ替え） | `/recipe` |
 | F-08 | レシピの保存・一覧・検索（料理名・食材） | `/`、`/recipe` |
 | — | 顔の自動モザイク（端末内で処理してから送信） | `/cook` |
-| — | 学習利用の同意（オプトイン）、ログアウト | `/settings` |
+| — | 学習利用の同意（オプトイン）、ログアウト、退会（写真・レシピ・アカウントの削除） | `/settings`、`/api/account/delete` |
 
 ## セットアップ
 
@@ -72,7 +72,7 @@ http://localhost:3000 を開きます。
 
 1. GitHub にリポジトリを作って push する
 2. Vercel で **Add New → Project** からリポジトリを選ぶ
-3. **Environment Variables** に `.env.local` と同じ5項目（`NEXT_PUBLIC_SUPABASE_URL`、`NEXT_PUBLIC_SUPABASE_ANON_KEY`、`AI_PROVIDER`、`GEMINI_API_KEY`、`GEMINI_MODEL`）を入れて Deploy
+3. **Environment Variables** に `.env.local` と同じ6項目（`NEXT_PUBLIC_SUPABASE_URL`、`NEXT_PUBLIC_SUPABASE_ANON_KEY`、`SUPABASE_SERVICE_ROLE_KEY`、`AI_PROVIDER`、`GEMINI_API_KEY`、`GEMINI_MODEL`）を入れて Deploy
 4. 発行されたURLを Supabase の Site URL / Redirect URLs に追加する
 
 Vercel の無料プラン（Hobby）は商用利用ができません。課金を始める前にプランを見直してください。
@@ -88,6 +88,7 @@ src/
     recipe/                       レシピの確認・編集
     settings/                     学習利用の同意・ログアウト
     api/analyze/route.ts          AI解析API（サーバー側。APIキーはここだけで使う）
+    api/account/delete/route.ts   退会API（サーバー側。service role key はここだけで使う）
   lib/
     ai/index.ts                   AI呼び出しの入口（運用AIの切り替えはここで行う）
     ai/gemini.ts                  Gemini の呼び出し
