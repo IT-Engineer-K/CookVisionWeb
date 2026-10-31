@@ -14,6 +14,7 @@ export function LoginClient() {
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [passwordConfirm, setPasswordConfirm] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ kind: "error" | "info"; text: string } | null>(null);
 
@@ -23,6 +24,10 @@ export function LoginClient() {
 
   async function submit(e: FormEvent) {
     e.preventDefault();
+    if (mode === "signup" && password !== passwordConfirm) {
+      setMessage({ kind: "error", text: "確認用のパスワードが一致しません。" });
+      return;
+    }
     setBusy(true);
     setMessage(null);
     const supabase = getSupabase();
@@ -86,6 +91,21 @@ export function LoginClient() {
               onChange={(e) => setPassword(e.target.value)}
             />
           </div>
+          {mode === "signup" && (
+            <div>
+              <label className="label" htmlFor="password-confirm">パスワード（確認用）</label>
+              <input
+                id="password-confirm"
+                type="password"
+                required
+                minLength={6}
+                autoComplete="new-password"
+                className="input"
+                value={passwordConfirm}
+                onChange={(e) => setPasswordConfirm(e.target.value)}
+              />
+            </div>
+          )}
           <button type="submit" disabled={busy} className="btn-primary w-full">
             {busy ? "送信中…" : mode === "signin" ? "ログイン" : "登録する"}
           </button>
@@ -105,6 +125,7 @@ export function LoginClient() {
           className="w-full text-center text-sm text-ink-soft underline"
           onClick={() => {
             setMode(mode === "signin" ? "signup" : "signin");
+            setPasswordConfirm("");
             setMessage(null);
           }}
         >
