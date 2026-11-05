@@ -10,6 +10,7 @@ import { getFaceBlurSetting, preloadFaceDetector, preparePhoto } from "@/lib/ima
 import { CAPTURE_BUCKET, getSupabase } from "@/lib/supabase";
 import { MAX_PHOTOS } from "@/lib/limits";
 import { pickToPrune } from "@/lib/prune";
+import { extractVideoFrames, isVideoFile } from "@/lib/video";
 import type { Capture, CaptureSource, CookingSession } from "@/lib/types";
 
 type CaptureView = Capture & { url: string | null };
@@ -35,6 +36,8 @@ export function CookClient() {
   const [captures, setCaptures] = useState<CaptureView[]>([]);
   const [title, setTitle] = useState("");
   const [uploading, setUploading] = useState(0);
+  const [importProgress, setImportProgress] = useState<string | null>(null);
+  const importController = useRef<AbortController | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [faceWarning, setFaceWarning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -54,6 +57,8 @@ export function CookClient() {
   useEffect(() => {
     preloadFaceDetector();
   }, []);
+
+  useEffect(() => () => { importController.current?.abort(); }, [sessionId]);
 
   useEffect(() => {
     if (!user || !sessionId) return;
@@ -92,7 +97,7 @@ export function CookClient() {
   }
 
   /** 1枚を整えて保存し、一覧に加える。保存した行を返す */
-  async function uploadOne(file: File, source: CaptureSource, takenAt: string): Promise<CaptureView> {
+  async function uploadOne(file: File, source: CaptureSource, takenAt: string, note?: string): Promise<CaptureView> {
     if (!user || !sessionId) throw new Error("ログインが必要です");
     const supabase = getSupabase();
     const blurOn = getFaceBlurSetting();
@@ -112,10 +117,14 @@ export function CookClient() {
         face_blurred: prepared.faceBlurred,
         source,
         signature: prepared.signature,
+        note: note ?? null,
       })
       .select("*")
       .single();
-    if (error || !data) throw new Error(error?.message ?? "写真を保存できませんでした");
+    if (error || !data) {
+      await supabase.storage.from(CAPTURE_BUCKET).remove([path]);
+      throw new Error(error?.message ?? "写真を保存できませんでした");
+    }
     if (prepared.facesFound > 0) {
       originals.current.set(data.id, file);
       setFaces((f) => ({ ...f, [data.id]: prepared.facesFound }));
@@ -154,19 +163,62 @@ export function CookClient() {
   async function addFiles(e: ChangeEvent<HTMLInputElement>, fromAlbum: boolean) {
     const files = Array.from(e.target.files ?? []);
     e.target.value = "";
-    if (!files.length) return;
+    if (!files.length || importController.current || uploading > 0 || analyzing || !session) return;
     setError(null);
-    for (const file of files) {
-      setUploading((n) => n + 1);
-      try {
-        const takenAt = fromAlbum && file.lastModified ? new Date(file.lastModified).toISOString() : nowIso();
-        const added = await uploadOne(file, "manual", takenAt);
-        await pruneIfNeeded(added);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "写真を保存できませんでした");
-      } finally {
-        setUploading((n) => n - 1);
+    let videosLeft = files.filter(isVideoFile).length;
+    let photosLeft = files.length - videosLeft;
+    let slots = MAX_PHOTOS - capturesRef.current.filter((c) => !c.pruned).length;
+    if (videosLeft > 0 && slots < files.length) {
+      setError(`動画は工程写真に変換して追加します。解析の上限は${MAX_PHOTOS}枚です。不要な写真を削除するか、選ぶファイルを減らしてください。`);
+      return;
+    }
+    const controller = new AbortController();
+    importController.current = controller;
+    setUploading(files.length);
+    const errors: string[] = [];
+    try {
+      for (const file of files) {
+        const video = fromAlbum && isVideoFile(file);
+        let saved = 0;
+        try {
+          controller.signal.throwIfAborted();
+          const takenAt = fromAlbum && file.lastModified ? new Date(file.lastModified).toISOString() : nowIso();
+          if (video) {
+            setImportProgress(`${file.name}：動画を読み込み中…`);
+            const maxFrames = Math.floor((slots - photosLeft) / videosLeft);
+            for await (const frame of extractVideoFrames(file, maxFrames, controller.signal)) {
+              setImportProgress(`${file.name}：工程写真を保存中… ${frame.index + 1}/${frame.total}枚`);
+              const min = Math.floor(frame.offsetSec / 60);
+              const sec = Math.floor(frame.offsetSec % 60);
+              await uploadOne(
+                frame.file,
+                "manual",
+                new Date(new Date(takenAt).getTime() + frame.offsetSec * 1000).toISOString(),
+                `動画「${file.name}」の${min}分${sec}秒`,
+              );
+              saved++;
+              slots--;
+            }
+          } else {
+            setImportProgress(`${file.name}：写真を保存中…`);
+            const added = await uploadOne(file, "manual", takenAt);
+            slots--;
+            await pruneIfNeeded(added);
+          }
+        } catch (err) {
+          if (controller.signal.aborted) break;
+          const message = err instanceof Error ? err.message : "ファイルを保存できませんでした";
+          errors.push(`${file.name}：${message}${saved > 0 ? `（${saved}枚は保存済みです）` : ""}`);
+        } finally {
+          if (video) videosLeft--; else photosLeft--;
+          setUploading((n) => n - 1);
+        }
       }
+    } finally {
+      importController.current = null;
+      setUploading(0);
+      setImportProgress(null);
+      if (errors.length) setError(errors.join("\n"));
     }
   }
 
@@ -315,7 +367,7 @@ export function CookClient() {
 
       <button
         className="btn mb-3 w-full py-3"
-        disabled={!session}
+        disabled={!session || uploading > 0 || analyzing}
         onClick={() => {
           setError(null);
           setAutoOpen(true);
@@ -339,7 +391,7 @@ export function CookClient() {
                 </div>
                 <div className="flex items-center justify-between">
                   <span>{origin ? elapsedLabel(origin, c.taken_at) : ""}</span>
-                  <button className="font-bold underline" onClick={() => restoreCapture(c)}>
+                  <button className="font-bold underline" disabled={uploading > 0 || analyzing} onClick={() => restoreCapture(c)}>
                     戻す
                   </button>
                 </div>
@@ -351,6 +403,7 @@ export function CookClient() {
 
       <div className="mb-4 rounded-xl bg-mustard/15 p-3 text-xs leading-relaxed text-ink-soft">
         材料を並べたところ、切ったあと、火にかけたとき、火を止めたときに撮ると、分量と加熱時間が正確になります。
+        <p className="mt-1">アルバムから写真・動画を追加できます。動画は全体から工程写真を取り出します（既存の写真と合わせて最大{MAX_PHOTOS}枚）。動画本体と音声は保存・解析しません。</p>
       </div>
 
       {faceWarning && (
@@ -358,7 +411,7 @@ export function CookClient() {
           顔のモザイク処理を読み込めなかったため、モザイクなしで保存しました。人が写らないように撮ってください。
         </p>
       )}
-      {error && <p className="mb-3 rounded-xl bg-tomato/10 p-3 text-sm text-tomato">{error}</p>}
+      {error && <p role="alert" className="mb-3 whitespace-pre-line rounded-xl bg-tomato/10 p-3 text-sm text-tomato">{error}</p>}
 
       <ol className="space-y-3">
         {visible.map((c, i) => (
@@ -406,22 +459,22 @@ export function CookClient() {
           </li>
         ))}
         {uploading > 0 && (
-          <li className="card p-3 text-center text-sm text-ink-soft">写真を処理中…（{uploading}枚）</li>
+          <li role="status" className="card break-words p-3 text-center text-sm text-ink-soft">{importProgress ?? `写真を処理中…（${uploading}枚）`}</li>
         )}
         {visible.length === 0 && uploading === 0 && (
-          <li className="card py-10 text-center text-sm text-ink-soft">下のボタンで、最初の工程を撮影してください。</li>
+          <li className="card py-10 text-center text-sm text-ink-soft">下のボタンで撮影するか、アルバムから写真・動画を追加してください。</li>
         )}
       </ol>
 
       <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={(e) => addFiles(e, false)} />
-      <input ref={albumRef} type="file" accept="image/*" multiple hidden onChange={(e) => addFiles(e, true)} />
+      <input ref={albumRef} type="file" accept="image/*,video/*,.mp4,.mov,.m4v,.webm" multiple hidden onChange={(e) => addFiles(e, true)} />
 
       <div className="fixed inset-x-0 bottom-0 z-10 border-t border-line bg-paper/95 backdrop-blur">
         <div className="mx-auto flex max-w-xl gap-2 px-4 py-3">
-          <button className="btn-primary h-14 flex-[2] text-base" onClick={() => cameraRef.current?.click()}>
+          <button className="btn-primary h-14 flex-[2] text-base" disabled={!session || uploading > 0 || analyzing} onClick={() => cameraRef.current?.click()}>
             撮影する
           </button>
-          <button className="btn h-14 flex-1 whitespace-nowrap px-2" onClick={() => albumRef.current?.click()}>
+          <button className="btn h-14 flex-1 whitespace-nowrap px-2" disabled={!session || uploading > 0 || analyzing} aria-label="アルバムから写真・動画を追加" onClick={() => albumRef.current?.click()}>
             アルバム
           </button>
           <button
