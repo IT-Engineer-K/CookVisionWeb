@@ -60,7 +60,10 @@ export function LoginClient() {
       <div className="card mx-auto mt-6 max-w-sm space-y-4">
         <div>
           <h1 className="text-xl font-bold">{mode === "signin" ? "ログイン" : "アカウント作成"}</h1>
-          <p className="mt-1 text-sm text-ink-soft">撮った写真とレシピは、あなただけが見られます。</p>
+          <p className="mt-1 text-sm text-ink-soft">
+            撮った写真とレシピは、他の利用者には公開されません。レシピの下書きを作るため、写真等を外部のAIサービスに送信します。詳しくは
+            <Link href="/privacy" className="underline">プライバシーポリシー</Link>をご確認ください。
+          </p>
         </div>
 
         <button onClick={google} className="btn w-full">

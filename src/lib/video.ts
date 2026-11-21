@@ -46,7 +46,12 @@ function waitForVideo(
 }
 
 /** 動画は端末内だけで開き、1枚ずつ渡してメモリ使用量を抑える。 */
-export async function* extractVideoFrames(file: File, maxFrames: number, signal: AbortSignal) {
+export async function* extractVideoFrames(
+  file: File,
+  maxFrames: number,
+  signal: AbortSignal,
+  requestedOffsets?: readonly number[],
+) {
   const video = document.createElement("video");
   video.preload = "auto";
   video.muted = true;
@@ -55,7 +60,9 @@ export async function* extractVideoFrames(file: File, maxFrames: number, signal:
   const canvas = document.createElement("canvas");
   try {
     await waitForVideo(video, "loadeddata", signal, () => { video.src = url; video.load(); });
-    const offsets = videoFrameOffsets(video.duration, maxFrames);
+    const offsets = requestedOffsets
+      ? requestedOffsets.map((offset) => Math.min(offset, Math.max(0, video.duration - 0.05)))
+      : videoFrameOffsets(video.duration, maxFrames);
     if (!video.videoWidth || !video.videoHeight) throw new Error("動画の映像を取得できませんでした。");
     const scale = Math.min(1, 1280 / Math.max(video.videoWidth, video.videoHeight));
     canvas.width = Math.max(1, Math.round(video.videoWidth * scale));

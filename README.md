@@ -41,7 +41,7 @@ npm install
 5. Googleログインを使う場合は **Authentication → Providers → Google** を有効にする（Google Cloud で OAuth クライアントの作成が必要）
 
 メールでの登録は、初期設定では確認メールのリンクを開くまでログインできません。
-試作中に省きたい場合は **Authentication → Providers → Email** の「Confirm email」をオフにします。
+写真機能だけの試作で確認を省く場合は **Authentication → Providers → Email** の「Confirm email」をオフにできます。動画解析βにはメール確認が必要です。
 
 ### 3. Gemini の APIキーを用意する
 
@@ -77,6 +77,17 @@ http://localhost:3000 を開きます。
 
 Vercel の無料プラン（Hobby）は商用利用ができません。課金を始める前にプランを見直してください。
 
+## 動画解析βをローカルで試す
+
+1. 開発用Supabaseに `supabase/migrations/20261117090000_video_beta.sql` まで適用します。Supabase CLIのローカル環境では `npx supabase migration up --local` を使います。
+2. Supabaseのメール確認を有効にします。確認を省略して作成した既存アカウントにも確認済み時刻が入るため、その履歴がある環境では、対象メールの所有を再確認するまでβを有効にしないでください。ローカルの検証では受信箱を使って登録確認を行います。
+3. `.env.local` の `SUPABASE_SERVICE_ROLE_KEY` に開発用Supabaseの管理用キー、`VIDEO_BETA_GEMINI_API_KEY` に課金を有効にしていないGemini APIプロジェクトのキーを設定し、開発サーバーを再起動します。βのキーを空欄にすると無効になります。
+4. 確認済みの `@ms.dendai.ac.jp` アカウントでログインし、ホームから「動画解析β」を開きます。卒業生も大学メールを利用できれば対象です。録画済みのMP4を選択し、送信への同意をチェックして解析します。
+
+入力は通常のMP4（0.1～30秒、4,000,000バイトまで）です。動画と音声はGoogle Geminiに送られ、CookVisionでは動画本体を保存しません。Gemini 3.1 Flash-Liteでは動画を毎秒2フレームの設定で解析します。同じ動画を調理画面で写真として取り込んだ場合と、拾えた工程や時刻を比べられます。
+
+試行は大学メールごとに1日2回、全体で1日20回までです。枠は日本時間の午前0時に更新され、Geminiに送信を試みた回は解析が失敗しても消費します。混雑や枠切れの際は写真解析も使えます。静止画の切り出しや保存に失敗した場合も、先に保存した下書きと工程時刻は編集できます。
+
 ## 構成
 
 ```
@@ -88,7 +99,7 @@ src/
     recipe/                       レシピの確認・編集
     settings/                     学習利用の同意・ログアウト
     api/analyze/route.ts          AI解析API（サーバー側。APIキーはここだけで使う）
-    api/account/delete/route.ts   退会API（サーバー側。service role key はここだけで使う）
+    api/account/delete/route.ts   退会API（サーバー側）
   lib/
     ai/index.ts                   AI呼び出しの入口（運用AIの切り替えはここで行う）
     ai/gemini.ts                  Gemini の呼び出し

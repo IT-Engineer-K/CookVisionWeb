@@ -107,8 +107,9 @@ export function SettingsClient() {
         {message && <p className="text-sm text-ink-soft">{message}</p>}
 
         <div className="card text-xs leading-relaxed text-ink-soft">
-          試作版では、写真の解析に Google の Gemini API（無料枠）を使っています。無料枠では、送信した画像が Google
-          のサービス改善に使われることがあります。人の顔は送信前に端末でモザイク処理しています。
+          試作版では、調理写真等の解析とレシピの下書きの生成に、Google の Gemini API を使っています。Googleによるデータの取扱いは、
+          <Link href="/privacy" className="underline">プライバシーポリシー</Link>
+          をご確認ください。顔の自動モザイクは設定で変更できますが、すべての顔を確実に処理するものではありません。
         </div>
 
         <button onClick={logout} className="btn w-full">

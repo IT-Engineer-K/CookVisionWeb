@@ -7,6 +7,7 @@ import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/components/AuthProvider";
 import { getSupabase } from "@/lib/supabase";
 import type { CookingSession } from "@/lib/types";
+import { videoBetaEmail } from "@/lib/video-beta";
 
 type RecipeRow = {
   id: string;
@@ -21,7 +22,7 @@ function formatDate(iso: string) {
 }
 
 /** ホーム：レシピ一覧と検索（F-08）、調理の開始（F-02） */
-export function HomeClient() {
+export function HomeClient({ videoBetaEnabled }: { videoBetaEnabled: boolean }) {
   const { user } = useAuth();
   const router = useRouter();
   const [recipes, setRecipes] = useState<RecipeRow[] | null>(null);
@@ -88,6 +89,12 @@ export function HomeClient() {
           {starting ? "準備中…" : "調理をはじめる"}
         </button>
       </section>
+
+      {videoBetaEnabled && videoBetaEmail(user) && (
+        <Link href="/video-beta" className="card mb-6 block py-3 font-bold hover:border-tomato/40">
+          動画解析β
+        </Link>
+      )}
 
       {error && <p className="mb-4 rounded-xl bg-tomato/10 p-3 text-sm text-tomato">{error}</p>}
 

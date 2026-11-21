@@ -20,6 +20,7 @@ export function RecipeClient() {
   const params = useSearchParams();
   const id = params.get("id");
   const isNew = params.get("new") === "1";
+  const missingVideoFrames = params.get("videoFrames") === "partial";
   const router = useRouter();
   const { user } = useAuth();
 
@@ -143,6 +144,7 @@ export function RecipeClient() {
           heat: x.heat?.trim() || null,
           duration_min: x.duration_min,
           capture_id: x.capture_id,
+          ...(x.video_offset_sec != null ? { video_offset_sec: x.video_offset_sec } : {}),
           confidence: x.confidence,
           ai_text: x.ai_text,
         }));
@@ -190,6 +192,12 @@ export function RecipeClient() {
               AIがレシピの下書きを作りました。
               {lowCount > 0 ? `「要確認」の${lowCount}項目を確かめて、必要なら直して保存してください。` : "内容を確かめて、必要なら直して保存してください。"}
             </div>
+          )}
+
+          {missingVideoFrames && (
+            <p role="status" className="rounded-xl bg-mustard/15 p-3 text-sm">
+              下書きと工程の時刻を保存しました。切り出し写真の一部または全部を追加できませんでした。
+            </p>
           )}
 
           <section className="space-y-3">
@@ -312,6 +320,9 @@ export function RecipeClient() {
                       </button>
                     </div>
                   </div>
+                  {s.video_offset_sec != null && (
+                    <p className="mb-1 text-xs text-ink-soft">動画の先頭から {s.video_offset_sec.toFixed(1)} 秒</p>
+                  )}
                   <div className="flex gap-3">
                     {s.capture_id && photoUrls[s.capture_id] && (
                       <CroppedImage

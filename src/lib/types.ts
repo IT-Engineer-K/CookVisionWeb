@@ -69,4 +69,5 @@ export type RecipeStep = {
   capture_id: string | null;
   confidence: Confidence;
   ai_text: string | null;
+  video_offset_sec?: number | null;
 };

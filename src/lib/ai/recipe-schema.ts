@@ -88,6 +88,10 @@ export const RECIPE_PROMPT = `あなたは料理の記録係です。
 
 /** AI の返答テキストから JSON を取り出して検証する */
 export function parseAiRecipe(text: string): AiRecipe {
+  return aiRecipeSchema.parse(parseAiRecipeJson(text));
+}
+
+export function parseAiRecipeJson(text: string): unknown {
   const trimmed = text
     .trim()
     .replace(/^```(?:json)?/i, "")
@@ -98,6 +102,5 @@ export function parseAiRecipe(text: string): AiRecipe {
   if (start < 0 || end <= start) {
     throw new Error("AI の返答からレシピを読み取れませんでした");
   }
-  const json: unknown = JSON.parse(trimmed.slice(start, end + 1));
-  return aiRecipeSchema.parse(json);
+  return JSON.parse(trimmed.slice(start, end + 1));
 }
