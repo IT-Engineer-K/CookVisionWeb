@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/components/AuthProvider";
+import { isPlusSubscription, type SubscriptionRow } from "@/lib/subscription";
 import { getSupabase } from "@/lib/supabase";
 import type { CookingSession } from "@/lib/types";
 import { videoBetaEmail } from "@/lib/video-beta";
@@ -27,6 +28,7 @@ export function HomeClient({ videoBetaEnabled }: { videoBetaEnabled: boolean }) 
   const router = useRouter();
   const [recipes, setRecipes] = useState<RecipeRow[] | null>(null);
   const [openSessions, setOpenSessions] = useState<CookingSession[]>([]);
+  const [isPlus, setIsPlus] = useState(false);
   const [query, setQuery] = useState("");
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -35,7 +37,7 @@ export function HomeClient({ videoBetaEnabled }: { videoBetaEnabled: boolean }) 
     if (!user) return;
     const supabase = getSupabase();
     (async () => {
-      const [r, s] = await Promise.all([
+      const [r, s, sub] = await Promise.all([
         supabase
           .from("recipes")
           .select("id, title, created_at, recipe_ingredients(name)")
@@ -46,10 +48,16 @@ export function HomeClient({ videoBetaEnabled }: { videoBetaEnabled: boolean }) 
           .in("status", ["capturing", "failed"])
           .order("started_at", { ascending: false })
           .limit(5),
+        supabase
+          .from("subscriptions")
+          .select("status, current_period_end")
+          .eq("user_id", user.id)
+          .maybeSingle(),
       ]);
       if (r.error) setError(r.error.message);
       setRecipes((r.data as RecipeRow[]) ?? []);
       setOpenSessions((s.data as CookingSession[]) ?? []);
+      setIsPlus(isPlusSubscription(sub.data as Pick<SubscriptionRow, "status" | "current_period_end"> | null));
     })();
   }, [user]);
 
@@ -90,9 +98,9 @@ export function HomeClient({ videoBetaEnabled }: { videoBetaEnabled: boolean }) 
         </button>
       </section>
 
-      {videoBetaEnabled && videoBetaEmail(user) && (
+      {videoBetaEnabled && (videoBetaEmail(user) || isPlus) && (
         <Link href="/video-beta" className="card mb-6 block py-3 font-bold hover:border-tomato/40">
-          動画解析β
+          {isPlus ? "動画解析（Plus）" : "動画解析β"}
         </Link>
       )}
 

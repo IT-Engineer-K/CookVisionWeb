@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/components/AuthProvider";
 import { getFaceBlurSetting, setFaceBlurSetting } from "@/lib/image";
+import { isPlusSubscription, type SubscriptionRow } from "@/lib/subscription";
 import { getSupabase } from "@/lib/supabase";
 
 /** 設定：学習利用の同意（オプトイン）とログアウト */
@@ -14,23 +15,50 @@ export function SettingsClient() {
   const router = useRouter();
   const [allow, setAllow] = useState(false);
   const [loaded, setLoaded] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    const checkout = new URLSearchParams(window.location.search).get("checkout");
+    if (checkout === "success") return "お支払いが完了しました。反映まで数秒かかる場合があります。";
+    if (checkout === "cancel") return "お支払いをキャンセルしました。";
+    return null;
+  });
+  const [subscription, setSubscription] = useState<SubscriptionRow | null>(null);
+  const [billingBusy, setBillingBusy] = useState(false);
   const [deleting, setDeleting] = useState(false);
   // 端末の設定を読む（サーバー側では読めないため初期値のオンになる）
   const [faceBlur, setFaceBlur] = useState(getFaceBlurSetting);
 
   useEffect(() => {
     if (!user) return;
-    getSupabase()
-      .from("profiles")
-      .select("allow_training")
-      .eq("id", user.id)
-      .maybeSingle()
-      .then(({ data }) => {
-        setAllow(Boolean(data?.allow_training));
-        setLoaded(true);
-      });
+    const supabase = getSupabase();
+    Promise.all([
+      supabase.from("profiles").select("allow_training").eq("id", user.id).maybeSingle(),
+      supabase.from("subscriptions").select("*").eq("user_id", user.id).maybeSingle(),
+    ]).then(([profileRes, subRes]) => {
+      setAllow(Boolean(profileRes.data?.allow_training));
+      setSubscription((subRes.data as SubscriptionRow | null) ?? null);
+      setLoaded(true);
+    });
   }, [user]);
+
+  const isPlus = isPlusSubscription(subscription);
+
+  async function openBillingEndpoint(endpoint: "/api/stripe/checkout" | "/api/stripe/portal") {
+    setBillingBusy(true);
+    setMessage(null);
+    const { data } = await getSupabase().auth.getSession();
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${data.session?.access_token ?? ""}` },
+    }).catch(() => null);
+    const body = await res?.json().catch(() => null);
+    if (!res || !res.ok || !body?.url) {
+      setBillingBusy(false);
+      setMessage(body?.error ?? "決済ページを開けませんでした。時間をおいてお試しください。");
+      return;
+    }
+    window.location.href = body.url;
+  }
 
   async function toggle(next: boolean) {
     if (!user) return;
@@ -70,6 +98,44 @@ export function SettingsClient() {
         <div className="card">
           <p className="text-xs text-ink-soft">ログイン中</p>
           <p className="font-bold">{user?.email}</p>
+        </div>
+
+        <div className="card space-y-2">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs text-ink-soft">プラン</p>
+              <p className="font-bold">{isPlus ? "CookVision Plus" : "Free プラン"}</p>
+            </div>
+            {isPlus && (
+              <span className="rounded-full bg-mustard/20 px-2.5 py-0.5 text-xs font-bold text-ink">
+                {subscription?.cancel_at_period_end ? "解約予定" : "有効"}
+              </span>
+            )}
+          </div>
+          <p className="text-xs leading-relaxed text-ink-soft">
+            {isPlus
+              ? "動画解析機能を利用できます。"
+              : "CookVision Plus にアップグレードすると、動画解析機能を利用できます。"}
+          </p>
+          {!isPlus ? (
+            <button
+              type="button"
+              disabled={!loaded || billingBusy}
+              onClick={() => openBillingEndpoint("/api/stripe/checkout")}
+              className="btn-primary w-full"
+            >
+              {billingBusy ? "移動中…" : "CookVision Plus にアップグレード"}
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={!loaded || billingBusy}
+              onClick={() => openBillingEndpoint("/api/stripe/portal")}
+              className="btn w-full"
+            >
+              {billingBusy ? "移動中…" : "プラン・お支払い管理"}
+            </button>
+          )}
         </div>
 
         <label className="card flex cursor-pointer items-start gap-3">

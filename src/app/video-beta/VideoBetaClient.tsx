@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/components/AuthProvider";
 import { getFaceBlurSetting, preparePhoto } from "@/lib/image";
 import { mp4Duration } from "@/lib/mp4";
+import { isPlusSubscription, type SubscriptionRow } from "@/lib/subscription";
 import { CAPTURE_BUCKET, getSupabase } from "@/lib/supabase";
 import { extractVideoFrames } from "@/lib/video";
 import { VIDEO_BETA_DAILY_LIMIT, VIDEO_BETA_MAX_BYTES, VIDEO_BETA_MAX_SECONDS, videoBetaEmail } from "@/lib/video-beta";
@@ -75,9 +76,26 @@ export function VideoBetaClient() {
   const [file, setFile] = useState<File | null>(null);
   const [consent, setConsent] = useState(false);
   const [withFrames, setWithFrames] = useState(true);
+  const [isPlus, setIsPlus] = useState(false);
+  const [planLoaded, setPlanLoaded] = useState(false);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const submitting = useRef(false);
+
+  useEffect(() => {
+    if (!user) return;
+    getSupabase()
+      .from("subscriptions")
+      .select("status, current_period_end")
+      .eq("user_id", user.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        setIsPlus(isPlusSubscription(data as Pick<SubscriptionRow, "status" | "current_period_end"> | null));
+        setPlanLoaded(true);
+      });
+  }, [user]);
+
+  const canUseVideo = Boolean(videoBetaEmail(user) || isPlus);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -135,8 +153,13 @@ export function VideoBetaClient() {
       <div className="card space-y-4">
         <Link href="/" className="text-sm underline">ホームへ戻る</Link>
         <h1 className="text-xl font-bold">動画解析β</h1>
-        {!videoBetaEmail(user) ? (
-          <p>確認済みの東京電機大学メール（@ms.dendai.ac.jp）でログインすると利用できます。</p>
+        {!planLoaded && !videoBetaEmail(user) ? (
+          <p className="text-sm text-ink-soft">利用状況を確認しています…</p>
+        ) : !canUseVideo ? (
+          <div className="space-y-2 text-sm">
+            <p>CookVision Plus への加入、または確認済みの東京電機大学メール（@ms.dendai.ac.jp）でログインすると利用できます。</p>
+            <Link href="/settings" className="btn-primary inline-block">設定画面でプランを見る</Link>
+          </div>
         ) : (
           <form onSubmit={submit} className="space-y-4">
             <p className="text-sm text-ink-soft">

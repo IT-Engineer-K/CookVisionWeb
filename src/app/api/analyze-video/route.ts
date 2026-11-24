@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import { analyzeWithGeminiVideo, VideoAnalysisError } from "@/lib/ai/gemini-video";
 import { mp4Duration } from "@/lib/mp4";
+import { hasPlusAccess } from "@/lib/supabase-admin";
 import { VIDEO_BETA_MAX_BYTES, VIDEO_BETA_MAX_SECONDS, videoBetaEmail } from "@/lib/video-beta";
 
 export const maxDuration = 120;
@@ -27,8 +28,13 @@ export async function POST(request: Request) {
   });
   const { data, error } = await supabase.auth.getUser(token);
   if (error || !data.user) return fail(401, "ログインし直してください。");
+
+  const admin = createClient(url, serviceKey, { auth });
+  const isPlus = await hasPlusAccess(admin, data.user.id);
   const email = videoBetaEmail(data.user);
-  if (!email) return fail(403, "確認済みの東京電機大学メール（@ms.dendai.ac.jp）が必要です。");
+  if (!isPlus && !email) {
+    return fail(403, "CookVision Plus への加入、または確認済みの東京電機大学メール（@ms.dendai.ac.jp）が必要です。");
+  }
 
   if (request.headers.get("x-video-consent") !== "1") return fail(400, "動画の送信に同意してください。");
   if (request.headers.get("content-type") !== "video/mp4" || !request.body) {
@@ -64,16 +70,18 @@ export async function POST(request: Request) {
   }
 
   // GoTrue also sets email_confirmed_at on signup when auto-confirm is enabled.
-  const settings = await fetch(`${url.replace(/\/$/, "")}/auth/v1/settings`, {
-    headers: { apikey: anonKey },
-    cache: "no-store",
-    signal: AbortSignal.timeout(5_000),
-  }).then((response) => response.ok ? response.json() : null).catch(() => null);
-  if (settings?.mailer_autoconfirm !== false) return unavailable();
+  if (!isPlus) {
+    const settings = await fetch(`${url.replace(/\/$/, "")}/auth/v1/settings`, {
+      headers: { apikey: anonKey },
+      cache: "no-store",
+      signal: AbortSignal.timeout(5_000),
+    }).then((response) => response.ok ? response.json() : null).catch(() => null);
+    if (settings?.mailer_autoconfirm !== false) return unavailable();
+  }
 
-  const admin = createClient(url, serviceKey, { auth });
+  const quotaKey = isPlus ? `plus:${data.user.id}` : email!;
   const { data: reserved, error: quotaError } = await admin.rpc("reserve_video_beta_attempt", {
-    email_hash: createHash("sha256").update(email).digest("hex"),
+    email_hash: createHash("sha256").update(quotaKey).digest("hex"),
   });
   if (quotaError || typeof reserved !== "boolean") return unavailable();
   if (!reserved) return fail(429, "今日の動画βの利用上限に達しました。翌日（日本時間）か写真解析をお試しください。");

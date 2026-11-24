@@ -1,4 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { getStripe } from "@/lib/stripe";
+import { getUserSubscription } from "@/lib/supabase-admin";
 
 function json(status: number, body: unknown) {
   return Response.json(body, { status });
@@ -51,6 +53,16 @@ export async function POST(request: Request) {
   const userId = userData.user.id;
 
   try {
+    const stripe = getStripe();
+    if (stripe) {
+      const sub = await getUserSubscription(admin, userId);
+      if (sub?.stripe_subscription_id && sub.status !== "canceled") {
+        await stripe.subscriptions.cancel(sub.stripe_subscription_id).catch((err) => {
+          console.warn("[account/delete] stripe cancel failed:", err instanceof Error ? err.message : err);
+        });
+      }
+    }
+
     const files = await listAllFiles(admin, userId);
     for (let i = 0; i < files.length; i += PAGE) {
       const { error } = await admin.storage.from(CAPTURE_BUCKET).remove(files.slice(i, i + PAGE));
