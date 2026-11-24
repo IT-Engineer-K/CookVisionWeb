@@ -17,10 +17,10 @@ const ACTIVE_STATUSES = new Set(["active", "trialing"]);
  */
 export function isPlusSubscription(
   subscription: Pick<SubscriptionRow, "status" | "current_period_end"> | null | undefined,
-  nowMs = Date.now(),
+  nowMs?: number,
 ): boolean {
   if (!subscription || !ACTIVE_STATUSES.has(subscription.status)) return false;
   if (!subscription.current_period_end) return true;
   const endMs = Date.parse(subscription.current_period_end);
-  return Number.isFinite(endMs) && endMs > nowMs;
+  return Number.isFinite(endMs) && endMs > (nowMs ?? Date.now());
 }
